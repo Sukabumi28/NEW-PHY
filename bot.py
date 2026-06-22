@@ -8,24 +8,6 @@ CHANNEL_ID = "-1003767281176"
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 FETCH_INTERVAL = 60
 DIGEST_INTERVAL = 2 * 3600
-MIN_ACTIVE_PLAYERS = 1000
-
-# ── BLACKLIST — block yang brainrot/sampah aja ───────────────────────────────
-BLACKLIST_KEYWORDS = [
-    "brainrot", "skibidi", "ohio", "sigma", "rizz", "mewing",
-    "grimace", "fanum", "gyatt", "gooning", "delulu", "sussy",
-    "obby", "murder mystery", "find the", "guess the",
-    "piggy", "rainbow friends", "camping", "break in",
-    "universal",
-]
-
-# ── FILTER — block blacklist, sisanya lolos ───────────────────────────────────
-def is_eligible(game_name):
-    name_lower = game_name.lower()
-    for kw in BLACKLIST_KEYWORDS:
-        if kw in name_lower:
-            return False
-    return True
 
 # ── DATE UTILS ────────────────────────────────────────────────────────────────
 WIB = timezone(timedelta(hours=7))
@@ -71,39 +53,6 @@ def is_today(iso_str):
     dt_wib = dt.astimezone(WIB)
     today_wib = datetime.now(WIB).strftime("%Y-%m-%d")
     return dt_wib.strftime("%Y-%m-%d") == today_wib
-
-# ── ROBLOX ACTIVE PLAYERS CHECK ───────────────────────────────────────────────
-_roblox_cache = {}
-
-def get_active_players(game_name):
-    if game_name in _roblox_cache:
-        return _roblox_cache[game_name]
-    try:
-        res = requests.get(
-            "https://games.roblox.com/v1/games/list",
-            params={"keyword": game_name, "maxRows": 3, "startRows": 0, "sortOrder": 2},
-            timeout=8
-        )
-        games = res.json().get("games", [])
-        if not games:
-            _roblox_cache[game_name] = -1
-            return -1
-        universe_id = games[0].get("universeId")
-        if not universe_id:
-            _roblox_cache[game_name] = -1
-            return -1
-        res2 = requests.get(
-            "https://games.roblox.com/v1/games",
-            params={"universeIds": universe_id},
-            timeout=8
-        )
-        data = res2.json().get("data", [{}])
-        playing = data[0].get("playing", 0) if data else 0
-        _roblox_cache[game_name] = playing
-        return playing
-    except:
-        _roblox_cache[game_name] = -1
-        return -1
 
 # ── FETCH ─────────────────────────────────────────────────────────────────────
 def fetch_rscripts(page=1):
@@ -336,24 +285,17 @@ def process_rscripts(scripts, sent_map, pending, daily):
         if prev == last_updated:
             continue
         game = script.get("game", {})
-        game_name = game.get("title", game.get("name", "")) if isinstance(game, dict) else str(game)
-        if not game_name or not is_eligible(game_name):
-            if game_name:
-                print(f"❌ Skip: {game_name}")
-            continue
-        players = get_active_players(game_name)
-        if players != -1 and players < MIN_ACTIVE_PLAYERS:
-            print(f"🔇 Low players ({players}): {game_name}")
-            sent_map[f"rs_{slug}"] = last_updated
+        game_name = game.get("title", game.get("name", "?")) if isinstance(game, dict) else str(game)
+        if not game_name:
             continue
         raw_url = script.get("rawScript", "")
         loadstring = fetch_raw_loadstring(raw_url)
-        entry = {"script": script, "loadstring": loadstring, "players": players}
+        entry = {"script": script, "loadstring": loadstring, "players": -1}
         pending.append(entry)
         daily.append(entry)
         sent_map[f"rs_{slug}"] = last_updated
         label = "🔄" if prev else "✅"
-        print(f"{label} [RScripts] {game_name} (🟢{players if players>0 else '?'} playing)")
+        print(f"{label} [RScripts] {game_name}")
 
 def process_scriptblox(scripts, sent_map, pending, daily):
     for script in scripts:
@@ -369,29 +311,22 @@ def process_scriptblox(scripts, sent_map, pending, daily):
             continue
         game_raw = script.get("game", "")
         game_name = game_raw.get("name", "") if isinstance(game_raw, dict) else str(game_raw)
-        if not game_name or not is_eligible(game_name):
-            if game_name:
-                print(f"❌ Skip: {game_name}")
-            continue
-        players = get_active_players(game_name)
-        if players != -1 and players < MIN_ACTIVE_PLAYERS:
-            print(f"🔇 Low players ({players}): {game_name}")
-            sent_map[f"sb_{slug}"] = last_bump
+        if not game_name:
             continue
         loadstring = script.get("script", None)
-        entry = {"script": script, "loadstring": loadstring, "players": players}
+        entry = {"script": script, "loadstring": loadstring, "players": -1}
         pending.append(entry)
         daily.append(entry)
         sent_map[f"sb_{slug}"] = last_bump
         label = "🔄" if prev else "✅"
         verified = "☑️" if script.get("verified") else ""
-        print(f"{label} [ScriptBlox] {game_name} {verified} (🟢{players if players>0 else '?'} playing)")
+        print(f"{label} [ScriptBlox] {game_name} {verified}")
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
     today = datetime.now(WIB).strftime("%d %b %Y")
     print(f"🤖 RANSBLOX Bot starting... ({today} WIB)")
-    print(f"🔍 Whitelist only | min {MIN_ACTIVE_PLAYERS} players | digest per jam\n")
+    print(f"🔍 No filter | digest tiap 2 jam\n")
 
     sent_map = {}
     pending_rs = []
